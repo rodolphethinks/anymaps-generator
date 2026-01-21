@@ -258,7 +258,7 @@ def add_text():
     txt_local.data.align_x = 'CENTER'
     txt_local.data.size = 1.2
     txt_local.data.extrude = 0.05
-    txt_local.data.character_spacing = 1.1
+    txt_local.data.space_character = 1.1
     
     # English Name
     bpy.ops.object.text_add(location=(0, -5.5, 0.5))
@@ -268,7 +268,7 @@ def add_text():
     txt_en.data.align_x = 'CENTER'
     txt_en.data.size = 0.7
     txt_en.data.extrude = 0.05
-    txt_en.data.character_spacing = 2.5 # Wide spacing for style
+    txt_en.data.space_character = 2.5 # Wide spacing for style
     
     # Material
     mat = bpy.data.materials.new(name="TextMat")
