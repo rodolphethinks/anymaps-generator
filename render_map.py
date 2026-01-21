@@ -26,6 +26,11 @@ ASPECT_RATIO = metadata['width'] / metadata['height']
 MIN_ELEV = metadata['min_elevation'] 
 MAX_ELEV = metadata['max_elevation'] 
 ELEV_RANGE = MAX_ELEV - MIN_ELEV
+CENTER_LAT = metadata.get('center_lat', 0)
+
+# Lat correction: EPSG:4326 is stretched horizontally as we go away from equator.
+# We need to shrink X by cos(lat) to make it look "Metric" / Upright.
+LAT_CORRECTION = 1 / math.cos(math.radians(CENTER_LAT)) if math.cos(math.radians(CENTER_LAT)) != 0 else 1.0
 
 # Visual Params
 RENDER_SAMPLES = 128
@@ -36,15 +41,13 @@ def clear_scene():
 
 def setup_render_engine():
     bpy.context.scene.render.engine = 'CYCLES'
-    # Fallback attempt for feature set
     try:
         bpy.context.scene.cycles.feature_set = 'EXPERIMENTAL'
     except AttributeError:
-        pass # Newer blender might not need this or handles it differently
+        pass
 
     bpy.context.scene.cycles.device = 'GPU'
     
-    # Attempt to enable GPU
     preferences = bpy.context.preferences
     cycles_preferences = preferences.addons['cycles'].preferences
     cycles_preferences.compute_device_type = 'CUDA' 
@@ -55,11 +58,12 @@ def setup_render_engine():
 
 def create_lighting():
     # Sun: North-West Illumination
-    bpy.ops.object.light_add(type='SUN', location=(10, -10, 10))
+    # Steeper angle (12 height) for less "detached" shadows
+    bpy.ops.object.light_add(type='SUN', location=(5, -5, 12)) 
     sun = bpy.context.active_object
-    sun.data.energy = 6.0
-    sun.data.angle = math.radians(10) # Soft shadows
-    sun.rotation_euler = (math.radians(45), math.radians(0), math.radians(135))
+    sun.data.energy = 5.0
+    sun.data.angle = math.radians(6) # Sharper shadows
+    sun.rotation_euler = (math.radians(35), math.radians(10), math.radians(135))
 
 def create_background():
     # White-gray circular gradient
@@ -107,19 +111,23 @@ def create_map_mesh():
     width_blender = 10.0
     height_blender = width_blender / ASPECT_RATIO
     
-    print(f"Creating Map Mesh: {width_blender} x {height_blender}")
+    # Correct scale_x to fix squashing
+    scale_x = width_blender / LAT_CORRECTION
+    
+    print(f"Creating Map Mesh: {width_blender} x {height_blender} (Corrected X Scale: {scale_x})")
     
     bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, 0))
     obj = bpy.context.active_object
     obj.name = "MapMesh"
-    obj.scale = (width_blender, height_blender, 1)
+    
+    # Apply scaled dimensions directly
+    obj.scale = (scale_x, height_blender, 1)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     
     # Subsurf Modifier
     subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
     subsurf.subdivision_type = 'SIMPLE'
     
-    # Try Adaptive
     try:
         obj.cycles.use_adaptive_subdivision = True
     except AttributeError:
@@ -131,11 +139,9 @@ def create_map_mesh():
     mat = bpy.data.materials.new(name="MapMat")
     mat.use_nodes = True
     
-    # Enable Displacement
     try:
         mat.cycles.displacement_method = 'DISPLACEMENT'
     except AttributeError:
-         # Fallback for newer blender API if changed
          pass
     
     nodes = mat.node_tree.nodes
@@ -167,7 +173,7 @@ def create_map_mesh():
     # Displacement Node
     disp_node = nodes.new('ShaderNodeDisplacement')
     disp_node.inputs['Midlevel'].default_value = 0.0
-    disp_node.inputs['Scale'].default_value = 0.35 
+    disp_node.inputs['Scale'].default_value = 0.45 
     
     links.new(coord.outputs['UV'], tex_elev.inputs['Vector'])
     links.new(tex_elev.outputs['Color'], disp_node.inputs['Height'])
@@ -177,23 +183,26 @@ def create_map_mesh():
     ramp = nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.interpolation = 'B_SPLINE'
     
+    # Position 0: White
     e0 = ramp.color_ramp.elements[0]
     e0.position = 0.0
-    e0.color = (0.92, 0.96, 1.0, 1) # White/Ice
+    e0.color = (0.95, 0.98, 1.0, 1) 
 
+    # Position 1: Strong Azure (Saturated)
     if len(ramp.color_ramp.elements) < 2:
         ramp.color_ramp.elements.new(0.4)
     e1 = ramp.color_ramp.elements[1]
-    e1.position = 0.4
-    e1.color = (0.2, 0.5, 0.85, 1) # Vibrant Blue
+    e1.position = 0.42
+    e1.color = (0.05, 0.4, 0.9, 1) 
     
+    # Position 2: Dark Navy
     if len(ramp.color_ramp.elements) < 3:
          e2 = ramp.color_ramp.elements.new(1.0)
     else:
          e2 = ramp.color_ramp.elements[2]
          
     e2.position = 1.0
-    e2.color = (0.01, 0.02, 0.15, 1) # Deep Navy
+    e2.color = (0.005, 0.01, 0.25, 1) 
     
     links.new(tex_elev.outputs['Color'], ramp.inputs['Fac'])
     links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
@@ -215,9 +224,8 @@ def create_map_mesh():
     
     links.new(coord.outputs['UV'], tex_mask.inputs['Vector'])
     
-    # Mix Factor: Mask (0=Transparent, 1=Solid)
-    # 0 -> Input 1, 1 -> Input 2
-    links.new(tex_mask.outputs['Color'], mix_shader.inputs[0])
+    # Mix Factor: Mask
+    links.new(tex_mask.outputs['Color'], mix_shader.inputs['Fac'])
     links.new(trans_shader.outputs['BSDF'], mix_shader.inputs[1])
     links.new(bsdf.outputs['BSDF'], mix_shader.inputs[2])
     
@@ -233,7 +241,7 @@ def setup_camera(map_obj):
     cam.location = (0, 0, 15)
     cam.rotation_euler = (0, 0, 0)
     cam.data.type = 'ORTHO'
-    cam.data.ortho_scale = 14.0 
+    cam.data.ortho_scale = 13.0 
     bpy.context.scene.camera = cam
 
 def add_text():
