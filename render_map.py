@@ -57,13 +57,13 @@ def setup_render_engine():
     bpy.context.scene.cycles.samples = RENDER_SAMPLES
 
 def create_lighting():
-    # Sun: North-West Illumination
-    # Steeper angle (12 height) for less "detached" shadows
-    bpy.ops.object.light_add(type='SUN', location=(5, -5, 12)) 
+    # Sun: Very high Z for close shadows
+    # High Z (25) means rays are almost vertical -> short shadows
+    bpy.ops.object.light_add(type='SUN', location=(3, -3, 25))
     sun = bpy.context.active_object
     sun.data.energy = 5.0
-    sun.data.angle = math.radians(6) # Sharper shadows
-    sun.rotation_euler = (math.radians(35), math.radians(10), math.radians(135))
+    sun.data.angle = math.radians(2) # Very sharp shadows
+    sun.rotation_euler = (math.radians(20), math.radians(5), math.radians(145))
 
 def create_background():
     # White-gray circular gradient
@@ -96,7 +96,7 @@ def create_background():
     # Color Ramp
     ramp = nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.elements[0].color = (1, 1, 1, 1) # White center
-    ramp.color_ramp.elements[1].color = (0.8, 0.8, 0.8, 1) # Gray edge
+    ramp.color_ramp.elements[1].color = (0.85, 0.85, 0.85, 1) # Subtle Gray edge
     
     links.new(coord.outputs['Object'], mapping.inputs['Vector'])
     links.new(mapping.outputs['Vector'], grad.inputs['Vector'])
@@ -107,20 +107,18 @@ def create_background():
     bg_plane.data.materials.append(mat)
 
 def create_map_mesh():
-    # Create Plane
+    # Center map slightly UP (Y=2) to leave space below for text
+    # Dimension calculations
     width_blender = 10.0
     height_blender = width_blender / ASPECT_RATIO
-    
-    # Correct scale_x to fix squashing
     scale_x = width_blender / LAT_CORRECTION
     
-    print(f"Creating Map Mesh: {width_blender} x {height_blender} (Corrected X Scale: {scale_x})")
+    print(f"Creating Map Mesh: {scale_x} x {height_blender}")
     
-    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, 0))
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 1.5, 0))
     obj = bpy.context.active_object
     obj.name = "MapMesh"
     
-    # Apply scaled dimensions directly
     obj.scale = (scale_x, height_blender, 1)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     
@@ -131,7 +129,6 @@ def create_map_mesh():
     try:
         obj.cycles.use_adaptive_subdivision = True
     except AttributeError:
-        print("Warning: Adaptive Subdivision API not found or changed. Using Fixed High Level.")
         subsurf.levels = 9
         subsurf.render_levels = 9
     
@@ -150,9 +147,8 @@ def create_map_mesh():
     
     # --- NODES ---
     output = nodes.new('ShaderNodeOutputMaterial')
-    
     bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-    bsdf.inputs['Roughness'].default_value = 0.8 # Matte
+    bsdf.inputs['Roughness'].default_value = 0.8 
     bsdf.inputs['Specular IOR Level'].default_value = 0.0
     
     coord = nodes.new('ShaderNodeTexCoord')
@@ -162,7 +158,6 @@ def create_map_mesh():
         img = bpy.data.images.load(str(HEIGHTMAP_PATH))
     else:
         img = bpy.data.images[str(HEIGHTMAP_PATH)]
-    
     img.colorspace_settings.name = 'Non-Color'
     
     tex_elev = nodes.new('ShaderNodeTexImage')
@@ -170,10 +165,11 @@ def create_map_mesh():
     tex_elev.interpolation = 'Cubic' 
     tex_elev.extension = 'EXTEND'
     
-    # Displacement Node
+    # Displacement
     disp_node = nodes.new('ShaderNodeDisplacement')
     disp_node.inputs['Midlevel'].default_value = 0.0
-    disp_node.inputs['Scale'].default_value = 0.45 
+    # EXAGGERATED Elevation
+    disp_node.inputs['Scale'].default_value = 1.5 
     
     links.new(coord.outputs['UV'], tex_elev.inputs['Vector'])
     links.new(tex_elev.outputs['Color'], disp_node.inputs['Height'])
@@ -183,26 +179,26 @@ def create_map_mesh():
     ramp = nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.interpolation = 'B_SPLINE'
     
-    # Position 0: White
+    # 0: White
     e0 = ramp.color_ramp.elements[0]
     e0.position = 0.0
-    e0.color = (0.95, 0.98, 1.0, 1) 
+    e0.color = (0.95, 0.98, 1.0, 1)
 
-    # Position 1: Strong Azure (Saturated)
+    # 1: Electric Blue (High Saturation)
     if len(ramp.color_ramp.elements) < 2:
         ramp.color_ramp.elements.new(0.4)
     e1 = ramp.color_ramp.elements[1]
     e1.position = 0.42
-    e1.color = (0.05, 0.4, 0.9, 1) 
+    e1.color = (0.0, 0.2, 1.0, 1) # Saturated
     
-    # Position 2: Dark Navy
+    # 2: Deep Navy
     if len(ramp.color_ramp.elements) < 3:
          e2 = ramp.color_ramp.elements.new(1.0)
     else:
          e2 = ramp.color_ramp.elements[2]
          
     e2.position = 1.0
-    e2.color = (0.005, 0.01, 0.25, 1) 
+    e2.color = (0.0, 0.005, 0.15, 1) 
     
     links.new(tex_elev.outputs['Color'], ramp.inputs['Fac'])
     links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
@@ -212,7 +208,6 @@ def create_map_mesh():
         mask_img = bpy.data.images.load(str(MASK_PATH))
     else:
         mask_img = bpy.data.images[str(MASK_PATH)]
-    
     mask_img.colorspace_settings.name = 'Non-Color'
         
     tex_mask = nodes.new('ShaderNodeTexImage')
@@ -221,10 +216,7 @@ def create_map_mesh():
     
     mix_shader = nodes.new('ShaderNodeMixShader')
     trans_shader = nodes.new('ShaderNodeBsdfTransparent')
-    
     links.new(coord.outputs['UV'], tex_mask.inputs['Vector'])
-    
-    # Mix Factor: Mask
     links.new(tex_mask.outputs['Color'], mix_shader.inputs['Fac'])
     links.new(trans_shader.outputs['BSDF'], mix_shader.inputs[1])
     links.new(bsdf.outputs['BSDF'], mix_shader.inputs[2])
@@ -232,62 +224,71 @@ def create_map_mesh():
     links.new(mix_shader.outputs['Shader'], output.inputs['Surface'])
     
     obj.data.materials.append(mat)
-    
     return obj
 
-def setup_camera(map_obj):
+def setup_camera():
     bpy.ops.object.camera_add()
     cam = bpy.context.active_object
-    cam.location = (0, 0, 15)
+    # Camera centered slightly above origin to frame map+text
+    cam.location = (0, 0.5, 15)
     cam.rotation_euler = (0, 0, 0)
     cam.data.type = 'ORTHO'
-    cam.data.ortho_scale = 13.0 
+    # Widen frame
+    cam.data.ortho_scale = 16.0 
     bpy.context.scene.camera = cam
 
 def add_text():
+    # Try to load Arial
+    font_path = "C:\\Windows\\Fonts\\arial.ttf"
+    fnt = None
+    if os.path.exists(font_path):
+        try:
+            fnt = bpy.data.fonts.load(font_path)
+        except:
+            pass
+
+    # Layout: Map is at Y=1.5, Height~8 -> Bottom ~ -2.5.
+    # Place text in the empty space below.
+    
     # Local Name
-    bpy.ops.object.text_add(location=(0, -6, 0.5))
+    bpy.ops.object.text_add(location=(0, -4.0, 0.5))
     txt_local = bpy.context.active_object
+    if fnt: txt_local.data.font = fnt
     txt_local.data.body = metadata['local_name']
     txt_local.data.align_x = 'CENTER'
-    txt_local.data.size = 1.0
+    txt_local.data.size = 1.2
     txt_local.data.extrude = 0.05
+    txt_local.data.character_spacing = 1.1
     
     # English Name
-    bpy.ops.object.text_add(location=(0, -7.2, 0.5))
+    bpy.ops.object.text_add(location=(0, -5.5, 0.5))
     txt_en = bpy.context.active_object
+    if fnt: txt_en.data.font = fnt
     txt_en.data.body = metadata['english_name']
     txt_en.data.align_x = 'CENTER'
-    txt_en.data.size = 0.6
+    txt_en.data.size = 0.7
     txt_en.data.extrude = 0.05
+    txt_en.data.character_spacing = 2.5 # Wide spacing for style
     
-    # Material for Text
+    # Material
     mat = bpy.data.materials.new(name="TextMat")
     mat.use_nodes = True
-    bsdf = None
-    for n in mat.node_tree.nodes:
-        if n.type == 'BSDF_PRINCIPLED':
-            bsdf = n
-            break
+    bsdf = mat.node_tree.nodes.get('Principled BSDF')
     if not bsdf:
         bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-
-    bsdf.inputs['Base Color'].default_value = (0.1, 0.1, 0.1, 1)
+    bsdf.inputs['Base Color'].default_value = (0.05, 0.05, 0.05, 1) # Dark Gray
     
     txt_local.data.materials.append(mat)
     txt_en.data.materials.append(mat)
 
 def render():
     bpy.context.scene.render.filepath = str(OUTPUT_DIR / f"{COUNTRY_NAME}_render.png")
-    # Resolution
     bpy.context.scene.render.resolution_x = 2400
     bpy.context.scene.render.resolution_y = 3000
-    bpy.context.scene.render.resolution_percentage = 100
     
     print("Rendering...")
     bpy.ops.render.render(write_still=True)
     print(f"Render saved to {bpy.context.scene.render.filepath}")
-    
     bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT_DIR / f"{COUNTRY_NAME}_scene.blend"))
 
 def main():
@@ -295,8 +296,8 @@ def main():
     setup_render_engine()
     create_lighting()
     create_background()
-    map_obj = create_map_mesh()
-    setup_camera(map_obj)
+    create_map_mesh() # creates object at Y=1.5
+    setup_camera()
     add_text()
     render()
 
