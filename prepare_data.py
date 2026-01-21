@@ -18,7 +18,7 @@ from PIL import Image
 DATA_DIR = Path("data")
 EXISTING_CACHE_DIR = Path("../map_render/data/dem/srtm_cache_tif").resolve() 
 SHAPEFILE_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
-COUNTRY_NAME = "South Korea"
+COUNTRY_NAME = "Algeria"
 
 def setup_directories():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -245,6 +245,9 @@ def export_for_blender(dem_path, geometry, attributes, country_name):
         elif country_name == "South Korea":
             local_name = "대한민국"
             english_name = "REPUBLIC OF KOREA"
+        elif country_name == "Algeria":
+            local_name = "الجمهورية الجزائرية"
+            english_name = "PEOPLE'S DEMOCRATIC REPUBLIC OF ALGERIA"
         else:
             local_name = attributes.get('NAME', country_name)
             english_name = attributes.get('NAME_EN', country_name)
