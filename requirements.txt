@@ -1,0 +1,9 @@
+geopandas
+rasterio
+shapely
+requests
+numpy
+scipy
+matplotlib
+elevation
+rich
