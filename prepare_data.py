@@ -216,19 +216,28 @@ def export_for_blender(dem_path, geometry, attributes, country_name):
         data = src.read(1)
         
         # Stats
-        min_elev = np.nanmin(data[data > -32768]) # handling potential nodata
-        max_elev = np.nanmax(data)
+        valid_mask = data > -10000
+        if np.any(valid_mask):
+            min_elev = np.nanmin(data[valid_mask])
+            max_elev = np.nanmax(data[valid_mask])
+        else:
+            min_elev = 0
+            max_elev = 1
+            
         print(f"Elevation Range: {min_elev} to {max_elev}")
+        
+        # Clamp data to min_elev to avoid negative wrap-around for NoData
+        data_clamped = np.where(valid_mask, data, min_elev) 
         
         # Normalize to 0-65535 for 16-bit PNG
         range_val = max_elev - min_elev
         if range_val == 0: range_val = 1
         
-        normalized = ((data - min_elev) / range_val * 65535)
+        normalized = ((data_clamped - min_elev) / range_val * 65535)
         normalized = np.nan_to_num(normalized, nan=0).astype(np.uint16)
         
         # Create Mask (where data is not nan and not nodata)
-        mask_arr = (data > -10000).astype(np.uint8) * 255 # Simple heuristic for valid data
+        mask_arr = (valid_mask).astype(np.uint8) * 255
         
         # Save Heightmap
         heightmap_path = DATA_DIR / "dem" / f"{country_name}_heightmap.png"
