@@ -57,11 +57,11 @@ def setup_render_engine():
 
 def create_lighting():
     # Sun: Very high Z (35) for close shadows
-    bpy.ops.object.light_add(type='SUN', location=(5, -5, 35)) 
+    bpy.ops.object.light_add(type='SUN', location=(4, -4, 25)) 
     sun = bpy.context.active_object
     sun.data.energy = 8.0
     sun.data.angle = math.radians(15) # blurrier shadows
-    sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(145))
+    sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(105))
     
     # Fill Light (Area) to reduce black shadows
     bpy.ops.object.light_add(type='AREA', location=(-10, -10, 20))
@@ -187,8 +187,14 @@ def create_map_mesh():
     # TRUE Displacement Scale
     disp_node.inputs['Scale'].default_value = 3.5 
     
+    # Clamp height to avoid negative values (undershoot from cubic interpolation)
+    math_node = nodes.new('ShaderNodeMath')
+    math_node.operation = 'MAXIMUM'
+    math_node.inputs[1].default_value = 0.0
+    
     links.new(coord.outputs['UV'], tex_elev.inputs['Vector'])
-    links.new(tex_elev.outputs['Color'], disp_node.inputs['Height'])
+    links.new(tex_elev.outputs['Color'], math_node.inputs[0])
+    links.new(math_node.outputs['Value'], disp_node.inputs['Height'])
     links.new(disp_node.outputs['Displacement'], output.inputs['Displacement'])
     
     # Color Ramp
@@ -301,7 +307,10 @@ def add_text():
     bsdf = mat.node_tree.nodes.get('Principled BSDF')
     if not bsdf:
         bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-    bsdf.inputs['Base Color'].default_value = (0.05, 0.05, 0.05, 1) 
+    # Dark Gray (not full black)
+    bsdf.inputs['Base Color'].default_value = (0.2, 0.2, 0.2, 1) 
+    bsdf.inputs['Roughness'].default_value = 1.0
+    bsdf.inputs['Specular IOR Level'].default_value = 0.0
     
     txt_local.data.materials.append(mat)
     txt_en.data.materials.append(mat)
