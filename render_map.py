@@ -28,8 +28,7 @@ MAX_ELEV = metadata['max_elevation']
 ELEV_RANGE = MAX_ELEV - MIN_ELEV
 CENTER_LAT = metadata.get('center_lat', 0)
 
-# Lat correction: EPSG:4326 is stretched horizontally as we go away from equator.
-# We need to shrink X by cos(lat) to make it look "Metric" / Upright.
+# Lat correction
 LAT_CORRECTION = 1 / math.cos(math.radians(CENTER_LAT)) if math.cos(math.radians(CENTER_LAT)) != 0 else 1.0
 
 # Visual Params
@@ -47,31 +46,35 @@ def setup_render_engine():
         pass
 
     bpy.context.scene.cycles.device = 'GPU'
+    bpy.context.scene.cycles.use_denoising = True
+    bpy.context.scene.cycles.samples = RENDER_SAMPLES
     
+    # Try different device settings if needed
     preferences = bpy.context.preferences
     cycles_preferences = preferences.addons['cycles'].preferences
     cycles_preferences.compute_device_type = 'CUDA' 
     cycles_preferences.get_devices()
-    
-    bpy.context.scene.cycles.use_denoising = True
-    bpy.context.scene.cycles.samples = RENDER_SAMPLES
 
 def create_lighting():
-    # Sun: Very high Z for close shadows
-    # High Z (25) means rays are almost vertical -> short shadows
-    bpy.ops.object.light_add(type='SUN', location=(3, -3, 35)) # Increased Z for closer shadows
+    # Sun: Very high Z (35) for close shadows
+    bpy.ops.object.light_add(type='SUN', location=(5, -5, 35)) 
     sun = bpy.context.active_object
-    sun.data.energy = 5.0
-    sun.data.angle = math.radians(10) # Blurrier shadows (from 2)
-    sun.rotation_euler = (math.radians(20), math.radians(5), math.radians(145))
+    sun.data.energy = 8.0
+    sun.data.angle = math.radians(15) # blurrier shadows
+    sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(145))
+    
+    # Fill Light (Area) to reduce black shadows
+    bpy.ops.object.light_add(type='AREA', location=(-10, -10, 20))
+    fill = bpy.context.active_object
+    fill.data.energy = 2000.0
+    fill.data.size = 20.0
+    fill.rotation_euler = (math.radians(45), 0, math.radians(-45))
 
 def create_background():
-    # White-gray circular gradient
     bpy.ops.mesh.primitive_plane_add(size=100, location=(0, 0, -2))
     bg_plane = bpy.context.active_object
     bg_plane.name = "Background"
     
-    # Material
     mat = bpy.data.materials.new(name="BackgroundMat")
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -83,25 +86,27 @@ def create_background():
     bsdf.inputs['Roughness'].default_value = 1.0
     bsdf.inputs['Specular IOR Level'].default_value = 0.0
     
-    # Gradient
     grad = nodes.new('ShaderNodeTexGradient')
-    grad.gradient_type = 'SPHERICAL' # Requires mapping to be centered
+    grad.gradient_type = 'SPHERICAL' 
     
-    # Mapping
     mapping = nodes.new('ShaderNodeMapping')
     coord = nodes.new('ShaderNodeTexCoord')
-    # Center the spherical gradient. Use Object coords which are centered on plane.
-    # We need to scale it so it covers the view.
-    mapping.inputs['Location'].default_value = (0, 0, 0) # Object coords are centered
-    mapping.inputs['Scale'].default_value = (0.04, 0.04, 0.04) # Scale DOWN to make gradient circle larger? No, Scale UP to repeat?
-    # For spherical gradient in Object coords: Radius 1. To make it bigger, we scale coords DOWN.
+    # Center gradient
+    mapping.inputs['Location'].default_value = (0, 0, 0)
+    mapping.inputs['Scale'].default_value = (0.5, 0.5, 0.5) 
     
-    # Color Ramp
     ramp = nodes.new('ShaderNodeValToRGB')
-    # Center: Very Light Gray
-    ramp.color_ramp.elements[0].color = (0.95, 0.95, 0.95, 1) 
-    # Edge: Darker Gray to make it visible
-    ramp.color_ramp.elements[1].color = (0.6, 0.6, 0.6, 1) # Darker for visibility
+    
+    # Pos 0 (Edge)
+    ramp.color_ramp.elements[0].position = 0.0
+    ramp.color_ramp.elements[0].color = (0.85, 0.85, 0.85, 1) 
+    
+    # Pos 1 (Center)
+    if len(ramp.color_ramp.elements) < 2:
+         ramp.color_ramp.elements.new(1.0)
+    
+    ramp.color_ramp.elements[1].position = 1.0
+    ramp.color_ramp.elements[1].color = (0.95, 0.95, 0.95, 1) 
     
     links.new(coord.outputs['Object'], mapping.inputs['Vector'])
     links.new(mapping.outputs['Vector'], grad.inputs['Vector'])
@@ -112,8 +117,6 @@ def create_background():
     bg_plane.data.materials.append(mat)
 
 def create_map_mesh():
-    # Center map slightly UP (Y=2) to leave space below for text
-    # Dimension calculations
     width_blender = 10.0
     height_blender = width_blender / ASPECT_RATIO
     scale_x = width_blender / LAT_CORRECTION
@@ -131,20 +134,28 @@ def create_map_mesh():
     subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
     subsurf.subdivision_type = 'SIMPLE'
     
+    # Adaptive Subdivision
     try:
-        obj.cycles.use_adaptive_subdivision = True
+        subsurf.use_adaptive_subdivision = True
     except AttributeError:
-        subsurf.levels = 9
-        subsurf.render_levels = 9
+        try:
+             obj.cycles.use_adaptive_subdivision = True
+        except AttributeError:
+             subsurf.levels = 9
+             subsurf.render_levels = 9
     
     # Material
     mat = bpy.data.materials.new(name="MapMat")
     mat.use_nodes = True
     
+    # Displacement Method
     try:
-        mat.cycles.displacement_method = 'DISPLACEMENT'
+        mat.displacement_method = 'DISPLACEMENT'
     except AttributeError:
-         pass
+        try:
+            mat.cycles.displacement_method = 'DISPLACEMENT'
+        except AttributeError:
+            pass
     
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
@@ -170,11 +181,11 @@ def create_map_mesh():
     tex_elev.interpolation = 'Cubic' 
     tex_elev.extension = 'EXTEND'
     
-    # Displacement
+    # Displacement Node
     disp_node = nodes.new('ShaderNodeDisplacement')
     disp_node.inputs['Midlevel'].default_value = 0.0
-    # EXAGGERATED Elevation
-    disp_node.inputs['Scale'].default_value = 2.5 # Increased from 1.5
+    # TRUE Displacement Scale
+    disp_node.inputs['Scale'].default_value = 3.5 
     
     links.new(coord.outputs['UV'], tex_elev.inputs['Vector'])
     links.new(tex_elev.outputs['Color'], disp_node.inputs['Height'])
@@ -184,32 +195,35 @@ def create_map_mesh():
     ramp = nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.interpolation = 'B_SPLINE'
     
-    # 0: White/Lightest Blue
-    # User requested: #b6d2dd -> (182, 210, 221) -> Linear: (0.713, 0.823, 0.866, 1) ? 
-    # Actually Blender uses Linear RGB. 
-    # 182/255 = 0.713. gamma correction approx x^2.2 -> 0.47
+    # 0: Very Light Cyan / White (Lowlands) - Greece Style
     e0 = ramp.color_ramp.elements[0]
     e0.position = 0.0
-    e0.color = (0.47, 0.64, 0.72, 1) # Approx #b6d2dd in Linear RGB
+    e0.color = (0.9, 0.96, 1.0, 1) 
 
-    # 1: Electric Blue (High Saturation)
-    # Keeping the transition, but maybe shifting slightly?
+    # 1: Light Blue (Mid-low)
     if len(ramp.color_ramp.elements) < 2:
-        ramp.color_ramp.elements.new(0.4)
+        ramp.color_ramp.elements.new(0.2)
     e1 = ramp.color_ramp.elements[1]
-    e1.position = 0.42
-    e1.color = (0.0, 0.2, 1.0, 1) # Saturated
+    e1.position = 0.15
+    e1.color = (0.4, 0.75, 0.9, 1) 
     
-    # 2: Darkest Blue
-    # User requested: #050f32 -> (5, 15, 50)
-    # Linear: (0.0003, 0.0027, 0.03, 1) approx
+    # 2: Mid Blue (Mountains)
     if len(ramp.color_ramp.elements) < 3:
-         e2 = ramp.color_ramp.elements.new(1.0)
+         e2 = ramp.color_ramp.elements.new(0.5)
     else:
          e2 = ramp.color_ramp.elements[2]
          
-    e2.position = 1.0
-    e2.color = (0.001, 0.005, 0.04, 1) # Approx #050f32
+    e2.position = 0.5
+    e2.color = (0.1, 0.4, 0.8, 1) # Vibrant Blue
+    
+    # 3: Deep Blue (Peaks)
+    if len(ramp.color_ramp.elements) < 4:
+         e3 = ramp.color_ramp.elements.new(1.0)
+    else:
+         e3 = ramp.color_ramp.elements[3]
+         
+    e3.position = 1.0
+    e3.color = (0.02, 0.1, 0.5, 1) # Deep Blue
     
     links.new(tex_elev.outputs['Color'], ramp.inputs['Fac'])
     links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
@@ -240,19 +254,15 @@ def create_map_mesh():
 def setup_camera():
     bpy.ops.object.camera_add()
     cam = bpy.context.active_object
-    # Camera centered slightly above origin to frame map+text
     cam.location = (0, 0.5, 15)
     cam.rotation_euler = (0, 0, 0)
     cam.data.type = 'ORTHO'
-    # Widen frame
     cam.data.ortho_scale = 16.0 
     bpy.context.scene.camera = cam
 
 def add_text():
-    # Try to load fonts based on country preference or fallback to Arial
     font_path = "C:\\Windows\\Fonts\\arial.ttf"
     
-    # Specific font overrides for Asian scripts
     if metadata.get('country_name') == "South Korea":
         if os.path.exists("C:\\Windows\\Fonts\\malgun.ttf"):
             font_path = "C:\\Windows\\Fonts\\malgun.ttf"
@@ -266,9 +276,6 @@ def add_text():
             print(f"Failed to load font: {font_path}")
             pass
 
-    # Layout: Map is at Y=1.5, Height~8 -> Bottom ~ -2.5.
-    # Place text in the empty space below.
-    
     # Local Name
     bpy.ops.object.text_add(location=(0, -4.0, 0.5))
     txt_local = bpy.context.active_object
@@ -285,17 +292,16 @@ def add_text():
     if fnt: txt_en.data.font = fnt
     txt_en.data.body = metadata['english_name']
     txt_en.data.align_x = 'CENTER'
-    txt_en.data.size = 0.5 # Reduced from 0.7
+    txt_en.data.size = 0.5 
     txt_en.data.extrude = 0.05
-    txt_en.data.space_character = 1.2 # Reduced from 2.5
+    txt_en.data.space_character = 1.2 
     
-    # Material
     mat = bpy.data.materials.new(name="TextMat")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get('Principled BSDF')
     if not bsdf:
         bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-    bsdf.inputs['Base Color'].default_value = (0.05, 0.05, 0.05, 1) # Dark Gray
+    bsdf.inputs['Base Color'].default_value = (0.05, 0.05, 0.05, 1) 
     
     txt_local.data.materials.append(mat)
     txt_en.data.materials.append(mat)
@@ -315,7 +321,7 @@ def main():
     setup_render_engine()
     create_lighting()
     create_background()
-    create_map_mesh() # creates object at Y=1.5
+    create_map_mesh() 
     setup_camera()
     add_text()
     render()
