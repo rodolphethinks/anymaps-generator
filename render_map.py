@@ -205,14 +205,16 @@ def create_map_mesh():
     # 0: Very Light Cyan / White (Lowlands) - Greece Style
     e0 = ramp.color_ramp.elements[0]
     e0.position = 0.0
-    e0.color = (0.9, 0.96, 1.0, 1) 
+    # Make it even brighter/whiter
+    e0.color = (0.95, 0.98, 1.0, 1) 
 
-    # 1: Light Blue (Mid-low)
+    # 1: Light Blue (Mid-low) - Push this up to keep coast light
     if len(ramp.color_ramp.elements) < 2:
         ramp.color_ramp.elements.new(0.2)
     e1 = ramp.color_ramp.elements[1]
-    e1.position = 0.15
-    e1.color = (0.4, 0.75, 0.9, 1) 
+    e1.position = 0.2
+    # Lighter blue
+    e1.color = (0.6, 0.85, 0.95, 1) 
     
     # 2: Mid Blue (Mountains)
     if len(ramp.color_ramp.elements) < 3:
@@ -220,7 +222,7 @@ def create_map_mesh():
     else:
          e2 = ramp.color_ramp.elements[2]
          
-    e2.position = 0.5
+    e2.position = 0.6
     e2.color = (0.1, 0.4, 0.8, 1) # Vibrant Blue
     
     # 3: Deep Blue (Peaks)
