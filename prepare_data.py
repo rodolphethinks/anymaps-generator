@@ -17,8 +17,17 @@ from PIL import Image
 # Config
 DATA_DIR = Path("data")
 EXISTING_CACHE_DIR = Path("../map_render/data/dem/srtm_cache_tif").resolve() 
-SHAPEFILE_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
-COUNTRY_NAME = "South Korea"
+COUNTRIES_SHP_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
+REGIONS_SHP_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip"
+
+CONFIG_PATH = Path("config.json")
+with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    config = json.load(f)
+
+LOCATION_NAME = config.get("location_name", "South Korea")
+LOCATION_TYPE = config.get("location_type", "country") # country or region
+PARENT_COUNTRY = config.get("parent_country", None) # Optional, mainly for regions
+COLORS = config.get("colors", {})
 
 def setup_directories():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,18 +35,18 @@ def setup_directories():
     (DATA_DIR / "dem").mkdir(exist_ok=True)
     EXISTING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-def download_shapefile():
-    target_zip = DATA_DIR / "shapefiles" / "ne_10m_admin_0_countries.zip"
-    target_shp = DATA_DIR / "shapefiles" / "ne_10m_admin_0_countries.shp"
+def download_shapefile(url, filename):
+    target_zip = DATA_DIR / "shapefiles" / f"{filename}.zip"
+    target_shp = DATA_DIR / "shapefiles" / f"{filename}.shp"
     
     if target_shp.exists():
-        print(f"Shapefile already exists at {target_shp}")
+        print(f"Shapefile {filename} already exists.")
         return target_shp
 
-    print(f"Downloading shapefile from {SHAPEFILE_URL}...")
+    print(f"Downloading shapefile from {url}...")
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(SHAPEFILE_URL, headers=headers, stream=True)
+        response = requests.get(url, headers=headers, stream=True)
         if response.status_code == 200:
             with open(target_zip, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):
@@ -52,19 +61,43 @@ def download_shapefile():
         
     return target_shp
 
-def get_country_geometry(shp_path, country_name):
-    print(f"Loading shapefile to find {country_name}...")
-    gdf = gpd.read_file(shp_path)
-    # Check for name in standard columns
-    country = gdf[gdf['ADMIN'] == country_name]
-    if country.empty:
-        country = gdf[gdf['NAME'] == country_name]
+def get_geometry(location_name, location_type, parent_country=None):
+    print(f"Finding geometry for {location_name} ({location_type})...")
     
-    if country.empty:
-        raise ValueError(f"Country '{country_name}' not found in shapefile.")
-    
-    print(f"Found {country_name}. Getting geometry...")
-    return country.iloc[0].geometry, country.iloc[0]
+    if location_type == 'region':
+        shp_path = download_shapefile(REGIONS_SHP_URL, "ne_10m_admin_1_states_provinces")
+        gdf = gpd.read_file(shp_path)
+        
+        # Filter by name
+        # Try 'name' first, then 'woe_name', then 'gn_name'
+        matches = gdf[gdf['name'] == location_name]
+        if matches.empty:
+            matches = gdf[gdf['woe_name'] == location_name]
+        if matches.empty:
+            matches = gdf[gdf['gn_name'] == location_name]
+            
+        # If parent country is specified, filter by it
+        if not matches.empty and parent_country:
+             matches = matches[matches['admin'] == parent_country]
+             
+        if matches.empty:
+             raise ValueError(f"Region '{location_name}' not found.")
+             
+        result = matches.iloc[0]
+        return result.geometry, result
+        
+    else:
+        shp_path = download_shapefile(COUNTRIES_SHP_URL, "ne_10m_admin_0_countries")
+        gdf = gpd.read_file(shp_path)
+        
+        country = gdf[gdf['ADMIN'] == location_name]
+        if country.empty:
+            country = gdf[gdf['NAME'] == location_name]
+        
+        if country.empty:
+            raise ValueError(f"Country '{location_name}' not found.")
+        
+        return country.iloc[0].geometry, country.iloc[0]
 
 def get_cgiar_tiles(minx, miny, maxx, maxy):
     tiles = []
@@ -210,7 +243,7 @@ def clip_dem(dem_path, geometry, country_name):
     print(f"Clipped DEM saved to {clipped_path}")
     return clipped_path
 
-def export_for_blender(dem_path, geometry, attributes, country_name):
+def export_for_blender(dem_path, geometry, attributes, name):
     print("Exporting for Blender...")
     with rasterio.open(dem_path) as src:
         data = src.read(1)
@@ -240,33 +273,50 @@ def export_for_blender(dem_path, geometry, attributes, country_name):
         mask_arr = (valid_mask).astype(np.uint8) * 255
         
         # Save Heightmap
-        heightmap_path = DATA_DIR / "dem" / f"{country_name}_heightmap.png"
+        heightmap_path = DATA_DIR / "dem" / f"{name}_heightmap.png"
         Image.fromarray(normalized, mode='I;16').save(heightmap_path)
         
         # Save Mask
-        mask_path = DATA_DIR / "dem" / f"{country_name}_mask.png"
+        mask_path = DATA_DIR / "dem" / f"{name}_mask.png"
         Image.fromarray(mask_arr, mode='L').save(mask_path)
         
-        # Metadata
-        if country_name == "Greece":
+        # Metadata Logic
+        local_name = attributes.get('name_local', name)
+        if hasattr(local_name, 'isnull') and local_name.isnull(): # check if pandas series/value is null
+             local_name = name
+        elif not local_name:
+             local_name = name
+             
+        # Fallback table
+        if name == "Greece":
             local_name = "ΕΛΛΗΝΙΚΉ ΔΗΜΟΚΡΑΤÍA"
-            english_name = "HELLENIC REPUBLIC" 
-        elif country_name == "South Korea":
+        elif name == "South Korea":
             local_name = "대한민국"
-            english_name = "REPUBLIC OF KOREA"
-        elif country_name == "Algeria":
+        elif name == "Algeria":
             local_name = "الجمهورية الجزائرية"
-            english_name = "PEOPLE'S DEMOCRATIC REPUBLIC OF ALGERIA"
-        else:
-            local_name = attributes.get('NAME', country_name)
-            english_name = attributes.get('NAME_EN', country_name)
-            
+        elif LOCATION_TYPE == 'region':
+             # Try to get local name from region attributes if available
+             pass
+
+        english_name = attributes.get('name_en', name)
+        if not english_name:
+             english_name = attributes.get('name', name)
+
+        if name == "South Korea": 
+             english_name = "REPUBLIC OF KOREA"
+        elif name == "Algeria":
+             english_name = "PEOPLE'S DEMOCRATIC REPUBLIC OF ALGERIA"
+        
+        # Sanitize text
+        if isinstance(local_name, str): local_name = local_name.strip()
+        if isinstance(english_name, str): english_name = english_name.upper().strip()
+
         # Calculate center lat for projection correction
         bounds = geometry.bounds
         center_lat = (bounds[1] + bounds[3]) / 2
 
         metadata = {
-            "country_name": country_name,
+            "country_name": name,
             "local_name": local_name,
             "english_name": english_name,
             "min_elevation": float(min_elev),
@@ -274,27 +324,27 @@ def export_for_blender(dem_path, geometry, attributes, country_name):
             "width": src.width,
             "height": src.height,
             "center_lat": center_lat,
-            "crs": str(src.crs)
+            "crs": str(src.crs),
+            "colors": COLORS 
         }
         
         json_path = DATA_DIR / "dem" / "metadata.json"
-        with open(json_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
             
         print(f"Exported heightmap to {heightmap_path}")
         print(f"Exported metadata to {json_path}")
 
 def main():
     setup_directories()
-    shp_path = download_shapefile()
-    geometry, attributes = get_country_geometry(shp_path, COUNTRY_NAME)
     
-    # dem_path = download_dem(geometry, COUNTRY_NAME) # Old
-    dem_path = download_dem_manual(geometry, COUNTRY_NAME)
+    geometry, attributes = get_geometry(LOCATION_NAME, LOCATION_TYPE, PARENT_COUNTRY)
     
-    clipped_dem = clip_dem(dem_path, geometry, COUNTRY_NAME)
+    dem_path = download_dem_manual(geometry, LOCATION_NAME)
     
-    export_for_blender(clipped_dem, geometry, attributes, COUNTRY_NAME)
+    clipped_dem = clip_dem(dem_path, geometry, LOCATION_NAME)
+    
+    export_for_blender(clipped_dem, geometry, attributes, LOCATION_NAME)
     
     print("Data preparation finished successfully.")
 

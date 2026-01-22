@@ -200,39 +200,77 @@ def create_map_mesh():
     
     # Color Ramp
     ramp = nodes.new('ShaderNodeValToRGB')
-    ramp.color_ramp.interpolation = 'B_SPLINE'
+    ramp.color_ramp.interpolation = 'B_SPLINE' # Smoother than linear
     
-    # 0: Very Light Cyan / White (Lowlands) - Greece Style
-    e0 = ramp.color_ramp.elements[0]
-    e0.position = 0.0
-    # Make it even brighter/whiter
-    e0.color = (0.95, 0.98, 1.0, 1) 
-
-    # 1: Light Blue (Mid-low) - Push this up to keep coast light
-    if len(ramp.color_ramp.elements) < 2:
-        ramp.color_ramp.elements.new(0.2)
-    e1 = ramp.color_ramp.elements[1]
-    e1.position = 0.2
-    # Lighter blue
-    e1.color = (0.6, 0.85, 0.95, 1) 
+    colors_cfg = metadata.get('colors', {})
     
-    # 2: Mid Blue (Mountains)
-    if len(ramp.color_ramp.elements) < 3:
-         e2 = ramp.color_ramp.elements.new(0.5)
+    if colors_cfg and 'low_color' in colors_cfg and 'high_color' in colors_cfg:
+        # User defined simple gradient (2 keys)
+        # We can create intermediate stops for better 'B_SPLINE' behavior or just use 2
+        low = colors_cfg['low_color'] # [r,g,b,a]
+        high = colors_cfg['high_color']
+        
+        # Stop 0
+        e0 = ramp.color_ramp.elements[0]
+        e0.position = 0.0
+        e0.color = low
+        
+        # Stop 1 (End)
+        if len(ramp.color_ramp.elements) < 2:
+            ramp.color_ramp.elements.new(1.0)
+        
+        # Remove extras if any (default usually has 2)
+        while len(ramp.color_ramp.elements) > 2:
+            ramp.color_ramp.elements.remove(ramp.color_ramp.elements[-1])
+            
+        e1 = ramp.color_ramp.elements[1]
+        e1.position = 1.0
+        e1.color = high
+        
+        # Add intermediate stops for blending control?
+        # For B_SPLINE, having a couple of intermediate points helps control the curve.
+        # Let's add one at 0.5
+        e_mid = ramp.color_ramp.elements.new(0.5)
+        e_mid.color = (
+            (low[0] + high[0]) * 0.5,
+            (low[1] + high[1]) * 0.5,
+            (low[2] + high[2]) * 0.5,
+            1.0
+        )
+        
     else:
-         e2 = ramp.color_ramp.elements[2]
-         
-    e2.position = 0.6
-    e2.color = (0.1, 0.4, 0.8, 1) # Vibrant Blue
+        # DEFAULT BLUE THEME
+        # 0: Very Light Cyan / White (Lowlands) - Greece Style
+        e0 = ramp.color_ramp.elements[0]
+        e0.position = 0.0
+        # Make it even brighter/whiter
+        e0.color = (0.95, 0.98, 1.0, 1) 
     
-    # 3: Deep Blue (Peaks)
-    if len(ramp.color_ramp.elements) < 4:
-         e3 = ramp.color_ramp.elements.new(1.0)
-    else:
-         e3 = ramp.color_ramp.elements[3]
-         
-    e3.position = 1.0
-    e3.color = (0.02, 0.1, 0.5, 1) # Deep Blue
+        # 1: Light Blue (Mid-low) - Push this up to keep coast light
+        if len(ramp.color_ramp.elements) < 2:
+            ramp.color_ramp.elements.new(0.2)
+        e1 = ramp.color_ramp.elements[1]
+        e1.position = 0.2
+        # Lighter blue
+        e1.color = (0.6, 0.85, 0.95, 1) 
+        
+        # 2: Mid Blue (Mountains)
+        if len(ramp.color_ramp.elements) < 3:
+             e2 = ramp.color_ramp.elements.new(0.5)
+        else:
+             e2 = ramp.color_ramp.elements[2]
+             
+        e2.position = 0.6
+        e2.color = (0.1, 0.4, 0.8, 1) # Vibrant Blue
+        
+        # 3: Deep Blue (Peaks)
+        if len(ramp.color_ramp.elements) < 4:
+             e3 = ramp.color_ramp.elements.new(1.0)
+        else:
+             e3 = ramp.color_ramp.elements[3]
+             
+        e3.position = 1.0
+        e3.color = (0.02, 0.1, 0.5, 1) # Deep Blue
     
     links.new(tex_elev.outputs['Color'], ramp.inputs['Fac'])
     links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
