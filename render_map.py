@@ -306,6 +306,15 @@ def add_text():
     txt_local.data.materials.append(mat)
     txt_en.data.materials.append(mat)
 
+def setup_world():
+    world = bpy.context.scene.world
+    world.use_nodes = True
+    bg = world.node_tree.nodes['Background']
+    # Slight cool blue tint for shadows to avoid pitch black voids
+    bg.inputs['Color'].default_value = (0.2, 0.25, 0.35, 1)
+    # Low strength to keep it "a little dark" but not black
+    bg.inputs['Strength'].default_value = 0.3
+
 def render():
     bpy.context.scene.render.filepath = str(OUTPUT_DIR / f"{COUNTRY_NAME}_render.png")
     bpy.context.scene.render.resolution_x = 2400
@@ -319,6 +328,7 @@ def render():
 def main():
     clear_scene()
     setup_render_engine()
+    setup_world()
     create_lighting()
     create_background()
     create_map_mesh() 
