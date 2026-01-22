@@ -59,10 +59,10 @@ def setup_render_engine():
 def create_lighting():
     # Sun: Very high Z for close shadows
     # High Z (25) means rays are almost vertical -> short shadows
-    bpy.ops.object.light_add(type='SUN', location=(3, -3, 25))
+    bpy.ops.object.light_add(type='SUN', location=(3, -3, 35)) # Increased Z for closer shadows
     sun = bpy.context.active_object
     sun.data.energy = 5.0
-    sun.data.angle = math.radians(2) # Very sharp shadows
+    sun.data.angle = math.radians(10) # Blurrier shadows (from 2)
     sun.rotation_euler = (math.radians(20), math.radians(5), math.radians(145))
 
 def create_background():
@@ -85,18 +85,23 @@ def create_background():
     
     # Gradient
     grad = nodes.new('ShaderNodeTexGradient')
-    grad.gradient_type = 'SPHERICAL'
+    grad.gradient_type = 'SPHERICAL' # Requires mapping to be centered
     
     # Mapping
     mapping = nodes.new('ShaderNodeMapping')
     coord = nodes.new('ShaderNodeTexCoord')
-    # Center the spherical gradient
-    mapping.inputs['Location'].default_value = (-0.5, -0.5, 0)
+    # Center the spherical gradient. Use Object coords which are centered on plane.
+    # We need to scale it so it covers the view.
+    mapping.inputs['Location'].default_value = (0, 0, 0) # Object coords are centered
+    mapping.inputs['Scale'].default_value = (0.04, 0.04, 0.04) # Scale DOWN to make gradient circle larger? No, Scale UP to repeat?
+    # For spherical gradient in Object coords: Radius 1. To make it bigger, we scale coords DOWN.
     
     # Color Ramp
     ramp = nodes.new('ShaderNodeValToRGB')
-    ramp.color_ramp.elements[0].color = (0.95, 0.95, 0.95, 1) # Very Light Gray center
-    ramp.color_ramp.elements[1].color = (0.80, 0.80, 0.80, 1) # Light Gray edge
+    # Center: Very Light Gray
+    ramp.color_ramp.elements[0].color = (0.95, 0.95, 0.95, 1) 
+    # Edge: Darker Gray to make it visible
+    ramp.color_ramp.elements[1].color = (0.6, 0.6, 0.6, 1) # Darker for visibility
     
     links.new(coord.outputs['Object'], mapping.inputs['Vector'])
     links.new(mapping.outputs['Vector'], grad.inputs['Vector'])
@@ -169,7 +174,7 @@ def create_map_mesh():
     disp_node = nodes.new('ShaderNodeDisplacement')
     disp_node.inputs['Midlevel'].default_value = 0.0
     # EXAGGERATED Elevation
-    disp_node.inputs['Scale'].default_value = 1.5 
+    disp_node.inputs['Scale'].default_value = 2.5 # Increased from 1.5
     
     links.new(coord.outputs['UV'], tex_elev.inputs['Vector'])
     links.new(tex_elev.outputs['Color'], disp_node.inputs['Height'])
@@ -179,26 +184,32 @@ def create_map_mesh():
     ramp = nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.interpolation = 'B_SPLINE'
     
-    # 0: White
+    # 0: White/Lightest Blue
+    # User requested: #b6d2dd -> (182, 210, 221) -> Linear: (0.713, 0.823, 0.866, 1) ? 
+    # Actually Blender uses Linear RGB. 
+    # 182/255 = 0.713. gamma correction approx x^2.2 -> 0.47
     e0 = ramp.color_ramp.elements[0]
     e0.position = 0.0
-    e0.color = (0.95, 0.98, 1.0, 1)
+    e0.color = (0.47, 0.64, 0.72, 1) # Approx #b6d2dd in Linear RGB
 
     # 1: Electric Blue (High Saturation)
+    # Keeping the transition, but maybe shifting slightly?
     if len(ramp.color_ramp.elements) < 2:
         ramp.color_ramp.elements.new(0.4)
     e1 = ramp.color_ramp.elements[1]
     e1.position = 0.42
     e1.color = (0.0, 0.2, 1.0, 1) # Saturated
     
-    # 2: Deep Navy
+    # 2: Darkest Blue
+    # User requested: #050f32 -> (5, 15, 50)
+    # Linear: (0.0003, 0.0027, 0.03, 1) approx
     if len(ramp.color_ramp.elements) < 3:
          e2 = ramp.color_ramp.elements.new(1.0)
     else:
          e2 = ramp.color_ramp.elements[2]
          
     e2.position = 1.0
-    e2.color = (0.0, 0.005, 0.15, 1) 
+    e2.color = (0.001, 0.005, 0.04, 1) # Approx #050f32
     
     links.new(tex_elev.outputs['Color'], ramp.inputs['Fac'])
     links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
