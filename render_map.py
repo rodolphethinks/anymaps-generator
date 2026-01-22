@@ -60,18 +60,19 @@ def create_lighting():
     bpy.ops.object.light_add(type='SUN', location=(4, -4, 25)) 
     sun = bpy.context.active_object
     sun.data.energy = 8.0
-    sun.data.angle = math.radians(15) # blurrier shadows
-    sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(105))
+    sun.data.angle = math.radians(25) # Even softer shadows (was 15)
+    sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(145))
     
     # Fill Light (Area) to reduce black shadows
     bpy.ops.object.light_add(type='AREA', location=(-10, -10, 20))
     fill = bpy.context.active_object
-    fill.data.energy = 2000.0
+    fill.data.energy = 3000.0 # Bumping up fill light
     fill.data.size = 20.0
     fill.rotation_euler = (math.radians(45), 0, math.radians(-45))
 
 def create_background():
-    bpy.ops.mesh.primitive_plane_add(size=100, location=(0, 0, -2))
+    # Setup background plane closer to mesh to avoid floaty drop-shadow gap
+    bpy.ops.mesh.primitive_plane_add(size=100, location=(0, 0, -0.1))
     bg_plane = bpy.context.active_object
     bg_plane.name = "Background"
     
