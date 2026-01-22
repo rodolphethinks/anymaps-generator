@@ -95,8 +95,8 @@ def create_background():
     
     # Color Ramp
     ramp = nodes.new('ShaderNodeValToRGB')
-    ramp.color_ramp.elements[0].color = (1, 1, 1, 1) # White center
-    ramp.color_ramp.elements[1].color = (0.85, 0.85, 0.85, 1) # Subtle Gray edge
+    ramp.color_ramp.elements[0].color = (0.95, 0.95, 0.95, 1) # Very Light Gray center
+    ramp.color_ramp.elements[1].color = (0.80, 0.80, 0.80, 1) # Light Gray edge
     
     links.new(coord.outputs['Object'], mapping.inputs['Vector'])
     links.new(mapping.outputs['Vector'], grad.inputs['Vector'])
@@ -238,13 +238,21 @@ def setup_camera():
     bpy.context.scene.camera = cam
 
 def add_text():
-    # Try to load Arial
+    # Try to load fonts based on country preference or fallback to Arial
     font_path = "C:\\Windows\\Fonts\\arial.ttf"
+    
+    # Specific font overrides for Asian scripts
+    if metadata.get('country_name') == "South Korea":
+        if os.path.exists("C:\\Windows\\Fonts\\malgun.ttf"):
+            font_path = "C:\\Windows\\Fonts\\malgun.ttf"
+            
     fnt = None
     if os.path.exists(font_path):
         try:
             fnt = bpy.data.fonts.load(font_path)
+            print(f"Loaded font: {font_path}")
         except:
+            print(f"Failed to load font: {font_path}")
             pass
 
     # Layout: Map is at Y=1.5, Height~8 -> Bottom ~ -2.5.
@@ -266,9 +274,9 @@ def add_text():
     if fnt: txt_en.data.font = fnt
     txt_en.data.body = metadata['english_name']
     txt_en.data.align_x = 'CENTER'
-    txt_en.data.size = 0.7
+    txt_en.data.size = 0.5 # Reduced from 0.7
     txt_en.data.extrude = 0.05
-    txt_en.data.space_character = 2.5 # Wide spacing for style
+    txt_en.data.space_character = 1.2 # Reduced from 2.5
     
     # Material
     mat = bpy.data.materials.new(name="TextMat")

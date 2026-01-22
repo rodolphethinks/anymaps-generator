@@ -18,7 +18,7 @@ from PIL import Image
 DATA_DIR = Path("data")
 EXISTING_CACHE_DIR = Path("../map_render/data/dem/srtm_cache_tif").resolve() 
 SHAPEFILE_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
-COUNTRY_NAME = "Algeria"
+COUNTRY_NAME = "South Korea"
 
 def setup_directories():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
