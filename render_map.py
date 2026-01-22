@@ -307,8 +307,8 @@ def add_text():
     bsdf = mat.node_tree.nodes.get('Principled BSDF')
     if not bsdf:
         bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-    # Dark Gray (not full black)
-    bsdf.inputs['Base Color'].default_value = (0.2, 0.2, 0.2, 1) 
+    # Dark Gray (almost black)
+    bsdf.inputs['Base Color'].default_value = (0.015, 0.015, 0.015, 1) 
     bsdf.inputs['Roughness'].default_value = 1.0
     bsdf.inputs['Specular IOR Level'].default_value = 0.0
     
