@@ -7,7 +7,48 @@ A Python & Blender pipeline to generate 3D artistic relief maps effectively.
 - **Blender Rendering**: Procedurally generates a 3D scene with custom shaders, lighting, and camera setup.
 - **Custom Styling**: Produces "Hellenic Republic" style maps with localized text and specific color grading.
 
-## Usage
+## Usage (Web App)
+
+### First Time Setup
+
+1. **Install Python Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Install Frontend Dependencies**:
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+### Running the App
+
+1. **Start the Backend** (in one terminal):
+   ```bash
+   python backend.py
+   ```
+   Backend runs on `http://localhost:5000`
+
+2. **Start the Frontend** (in another terminal):
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   Frontend runs on `http://localhost:3000`
+
+3. **Open your browser** to `http://localhost:3000`
+
+The web app provides:
+- Beautiful light beige UI
+- Real-time generation status
+- View newly generated maps
+- Browse history of all generated maps
+- Color picker for elevation gradients
+- Support for countries and regions worldwide
+
+## Usage (CLI)
 
 1. **Setup Environment**:
    ```bash

@@ -7,3 +7,6 @@ scipy
 matplotlib
 elevation
 rich
+Pillow
+flask
+flask-cors

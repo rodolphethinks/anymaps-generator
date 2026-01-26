@@ -1,9 +1,19 @@
 {
-    "location_name": "Hérault",
-    "location_type": "region",
-    "parent_country": "France",
+    "location_name": "France",
+    "location_type": "country",
+    "parent_country": null,
     "colors": {
-        "low_color": [0.95, 0.98, 1.0, 1.0],
-        "high_color": [0.02, 0.1, 0.5, 1.0]
+        "low_color": [
+            1,
+            0.9921568627450981,
+            0.9215686274509803,
+            1
+        ],
+        "high_color": [
+            0.03529411764705882,
+            0.09019607843137255,
+            0.5058823529411764,
+            1
+        ]
     }
 }

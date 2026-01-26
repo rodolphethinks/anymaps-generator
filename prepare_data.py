@@ -6,6 +6,7 @@ import geopandas as gpd
 import rasterio
 from rasterio.mask import mask
 from rasterio.merge import merge
+from rasterio.enums import Resampling
 import shapely
 import numpy as np
 from pathlib import Path
@@ -245,9 +246,29 @@ def clip_dem(dem_path, geometry, country_name):
 
 def export_for_blender(dem_path, geometry, attributes, name):
     print("Exporting for Blender...")
+    
+    MAX_DIM = 16384 # Limit texture size to 16k to prevent Memory Errors
+    
     with rasterio.open(dem_path) as src:
-        data = src.read(1)
+        # Check dimensions
+        h, w = src.height, src.width
         
+        # Determine strict downsampling scale
+        scale = 1.0
+        if max(h, w) > MAX_DIM:
+            scale = MAX_DIM / max(h, w)
+            new_h = int(h * scale)
+            new_w = int(w * scale)
+            print(f"Image too large ({w}x{h}), downsampling to ({new_w}x{new_h})...")
+            
+            data = src.read(
+                1,
+                out_shape=(new_h, new_w),
+                resampling=Resampling.bilinear
+            )
+        else:
+            data = src.read(1)
+
         # Stats
         valid_mask = data > -10000
         if np.any(valid_mask):
@@ -280,6 +301,9 @@ def export_for_blender(dem_path, geometry, attributes, name):
         mask_path = DATA_DIR / "dem" / f"{name}_mask.png"
         Image.fromarray(mask_arr, mode='L').save(mask_path)
         
+        # Get actual dimensions for metadata
+        out_height, out_width = data.shape
+
         # Metadata Logic
         local_name = attributes.get('name_local', name)
         if hasattr(local_name, 'isnull') and local_name.isnull(): # check if pandas series/value is null
@@ -321,8 +345,8 @@ def export_for_blender(dem_path, geometry, attributes, name):
             "english_name": english_name,
             "min_elevation": float(min_elev),
             "max_elevation": float(max_elev),
-            "width": src.width,
-            "height": src.height,
+            "width": out_width,
+            "height": out_height,
             "center_lat": center_lat,
             "crs": str(src.crs),
             "colors": COLORS 

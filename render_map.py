@@ -12,10 +12,18 @@ OUTPUT_DIR = SCRIPT_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 METADATA_PATH = DATA_DIR / "metadata.json"
+CONFIG_PATH = SCRIPT_DIR / "config.json"
 
 # Load Metadata
 with open(METADATA_PATH, 'r', encoding='utf-8') as f:
     metadata = json.load(f)
+
+# Load Config (for advanced render settings)
+if CONFIG_PATH.exists():
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+else:
+    config = {}
 
 COUNTRY_NAME = metadata['country_name']
 HEIGHTMAP_PATH = DATA_DIR / f"{COUNTRY_NAME}_heightmap.png"
@@ -32,7 +40,11 @@ CENTER_LAT = metadata.get('center_lat', 0)
 LAT_CORRECTION = 1 / math.cos(math.radians(CENTER_LAT)) if math.cos(math.radians(CENTER_LAT)) != 0 else 1.0
 
 # Visual Params
-RENDER_SAMPLES = 128
+RENDER_SAMPLES = config.get('render_samples', 128)
+Z_SCALE = config.get('z_scale', 3.5)
+SUN_ANGLE = config.get('sun_angle', 25)
+SHOW_TEXT = config.get('show_text', True)
+
 
 def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
@@ -60,7 +72,7 @@ def create_lighting():
     bpy.ops.object.light_add(type='SUN', location=(4, -4, 25)) 
     sun = bpy.context.active_object
     sun.data.energy = 8.0
-    sun.data.angle = math.radians(25) # Even softer shadows (was 15)
+    sun.data.angle = math.radians(SUN_ANGLE) # Controlled by config
     sun.rotation_euler = (math.radians(20), math.radians(15), math.radians(145))
     
     # Fill Light (Area) to reduce black shadows
@@ -186,7 +198,7 @@ def create_map_mesh():
     disp_node = nodes.new('ShaderNodeDisplacement')
     disp_node.inputs['Midlevel'].default_value = 0.0
     # TRUE Displacement Scale
-    disp_node.inputs['Scale'].default_value = 3.5 
+    disp_node.inputs['Scale'].default_value = Z_SCALE 
     
     # Clamp height to avoid negative values (undershoot from cubic interpolation)
     math_node = nodes.new('ShaderNodeMath')
@@ -308,6 +320,10 @@ def setup_camera():
     bpy.context.scene.camera = cam
 
 def add_text():
+    if not SHOW_TEXT:
+        print("Text generation disabled in config.")
+        return
+
     font_path = "C:\\Windows\\Fonts\\arial.ttf"
     
     if metadata.get('country_name') == "South Korea":
